@@ -1,0 +1,141 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var fs = require('fs');
+var app = require('../app');
+var debug = require('debug')('rogueside:server');
+var http = require('http');
+var https = require('https');
+var conf = require('../config.js');
+var logger = require('../server/logger.js');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || conf.port || '3001');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server;
+
+// if https.redirectHttp is true, create custom app to redirect traffic
+if (conf.https && conf.https.redirectHttp) {
+	var express = require('express');
+	var redirect = express();
+
+	redirect.get('*', function(req, res) {
+		res.redirect('https://' + req.headers.host + req.url);
+	});
+
+	server = http.createServer(redirect);
+} else { // else, create as usual
+	server = http.createServer(app);
+}
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+/**
+ * Create HTTPS server if certificate information is defined
+ */
+
+if (conf.https && conf.https.key && conf.https.cert) {
+	var httpsPort = normalizePort(process.env.HTTPSPORT || conf.https.port || '3443');
+	app.set('httpsPort', httpsPort);
+
+	var options = {
+		key: fs.readFileSync(conf.https.key),
+		cert: fs.readFileSync(conf.https.cert)
+	}
+
+	if (conf.https.passphrase) {
+		options["passphrase"] = config.https.passphrase;
+	}
+
+	var httpsServer = https.createServer(options, app);
+
+	httpsServer.listen(httpsPort);
+	httpsServer.on('error', onError);
+	httpsServer.on('listening', onListening);
+}
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+	var port = parseInt(val, 10);
+
+	if (isNaN(port)) {
+		// named pipe
+		return val;
+	}
+
+	if (port >= 0) {
+		// port number
+		return port;
+	}
+
+	return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+	if (error.syscall !== 'listen') {
+		throw error;
+	}
+
+	var bind = typeof port === 'string'
+		? 'Pipe ' + port
+		: 'Port ' + port;
+
+	// handle specific listen errors with friendly messages
+	switch (error.code) {
+		case 'EACCES':
+			console.error(bind + ' requires elevated privileges');
+			process.exit(1);
+			break;
+		case 'EADDRINUSE':
+			console.error(bind + ' is already in use');
+			process.exit(1);
+			break;
+		default:
+			throw error;
+	}
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+	var addr = server.address();
+	var bind = typeof addr === 'string'
+		? 'pipe ' + addr
+		: 'port ' + addr.port;
+	debug('Listening on ' + bind);
+	logger.boot("Listening on " + bind + ".");
+}
+
+/**
+ * Socket.IO Initialization
+ */
+
+var io = require('socket.io')(server);
+const Server = require('../server/Server');
+new Server(io);
